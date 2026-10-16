@@ -10,8 +10,8 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🧾 GP Cargo 發票資料自動轉 Excel 工具（明細多列展開版）")
-st.caption("自動將同一張發票的多筆 BOL# 與 SKU# 依序往下展開到獨立列，其餘欄位留白，下一張發票接續在全新列！")
+st.title("🧾 GP Cargo 發票資料自動轉 Excel 工具（去 SKU# 標籤展開版）")
+st.caption("BOL 完整保留 BOL# 前綴、SKU 自動去除 SKU# 標籤，多筆資料依序往下展開至獨立列！")
 
 # ==================== 1. 操作介面 ====================
 st.markdown("---")
@@ -40,8 +40,9 @@ st.markdown("---")
 def parse_gp_invoice_rows(file_bytes):
     """
     解析 GP Cargo 發票：
-    將發票資訊與多筆 BOL/SKU 拆解為多列清單 (List of dicts)
-    第一列帶有完整表頭與金額，第 2 列起僅填入對應的 BOL 與 SKU，其餘留空
+    - BOL 欄位：保留 BOL# 前綴
+    - SKU 欄位：自動移除 SKU# 標籤，只保留純料號及備註
+    - 多筆項目逐列往下展開，其餘欄位留空
     """
     full_text = ""
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
@@ -85,8 +86,9 @@ def parse_gp_invoice_rows(file_bytes):
     bol_matches = re.findall(r"\b(BOL#[A-Za-z0-9\-]+)", full_text, re.IGNORECASE)
     clean_bols = [b.strip() for b in bol_matches if b.strip()]
 
-    # 5. 提取全部 SKU# (保留前綴 "SKU#")
-    sku_matches = re.findall(r"\b(SKU#[^\n\r]+)", full_text, re.IGNORECASE)
+    # 5. 提取全部 SKU# (自動去除 "SKU#" 標籤)
+    # 正則表達式捕獲組只抓取 SKU# 後面的內容
+    sku_matches = re.findall(r"\bSKU#\s*([^\n\r]+)", full_text, re.IGNORECASE)
     clean_skus = []
     for s in sku_matches:
         item = re.sub(r"\s+", " ", s).strip()
@@ -101,7 +103,7 @@ def parse_gp_invoice_rows(file_bytes):
         cur_bol = clean_bols[i] if i < len(clean_bols) else ""
         cur_sku = clean_skus[i] if i < len(clean_skus) else ""
 
-        # 只有第一列填入發票主要資訊，第二列以後全部留空白字串
+        # 第一列填入發票主檔資訊，第二列起其餘欄位留空
         if i == 0:
             rows.append({
                 "INVOICE NUMBER": invoice_number,
@@ -134,7 +136,7 @@ if uploaded_files:
 
     new_df = pd.DataFrame(all_rows)
 
-    # 既有 Excel 合併累加
+    # 累加合併既有 Excel
     if existing_file:
         try:
             old_df = pd.read_excel(existing_file)
